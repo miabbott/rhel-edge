@@ -191,14 +191,6 @@ jobs:
             - Updated packages (${{ needs.check-compose.outputs.count }}):
                 - ${{ needs.check-compose.outputs.updated_pkgs }}
 
-      - name: Enable pull request automerge
-        if: steps.cpr.outputs.pull-request-operation == 'created'
-        uses: peter-evans/enable-pull-request-automerge@a660677d5469627102a1c1e11409dd063606628d # v3.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          merge-method: rebase
-
       - name: Add a comment to trigger test workflow
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:

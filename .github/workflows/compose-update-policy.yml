@@ -1,0 +1,31 @@
+---
+name: Compose update policy
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+  check_suite:
+    types: [completed]
+  status:
+
+permissions: {}
+
+jobs:
+  compose-update-policy:
+    if: github.repository == 'virt-s1/rhel-edge'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: read
+      statuses: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Validate and merge eligible compose update
+        env:
+          DOWNLOAD_NODE: ${{ secrets.DOWNLOAD_NODE }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/compose-update-policy.py

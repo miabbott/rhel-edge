@@ -649,14 +649,6 @@ jobs:
             - Updated packages(${{ needs.check-compose.outputs.count_92 }}):
                   ${{ needs.check-compose.outputs.updated_pkgs_92 }}
 
-      - name: Enable Pull Request Automerge
-        if: steps.cpr.outputs.pull-request-operation == 'created'
-        uses: peter-evans/enable-pull-request-automerge@a660677d5469627102a1c1e11409dd063606628d # v3.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          merge-method: rebase
-
       - name: Add a comment to trigger test workflow
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
@@ -707,14 +699,6 @@ jobs:
             - Updated packages(${{ needs.check-compose.outputs.count_94 }}):
                   ${{ needs.check-compose.outputs.updated_pkgs_94 }}
 
-      - name: Enable Pull Request Automerge
-        if: steps.cpr.outputs.pull-request-operation == 'created'
-        uses: peter-evans/enable-pull-request-automerge@a660677d5469627102a1c1e11409dd063606628d # v3.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          merge-method: rebase
-
       - name: Add a comment to trigger test workflow
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
@@ -764,14 +748,6 @@ jobs:
                 - ${{ needs.check-compose.outputs.composer_cli_version_95 }}
             - Updated packages(${{ needs.check-compose.outputs.count_95 }}):
                   ${{ needs.check-compose.outputs.updated_pkgs_95 }}
-
-      - name: Enable Pull Request Automerge
-        if: steps.cpr.outputs.pull-request-operation == 'created'
-        uses: peter-evans/enable-pull-request-automerge@a660677d5469627102a1c1e11409dd063606628d # v3.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          merge-method: rebase
 
       - name: Add a comment to trigger test workflow
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
@@ -824,14 +800,6 @@ jobs:
                   ${{ needs.check-compose.outputs.updated_pkgs_96 }}
 
 
-      - name: Enable Pull Request Automerge
-        if: steps.cpr.outputs.pull-request-operation == 'created'
-        uses: peter-evans/enable-pull-request-automerge@a660677d5469627102a1c1e11409dd063606628d # v3.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          merge-method: rebase
-
       - name: Add a comment to trigger test workflow
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
@@ -882,14 +850,6 @@ jobs:
             - Updated packages(${{ needs.check-compose.outputs.count_98 }}):
                   ${{ needs.check-compose.outputs.updated_pkgs_98 }}
 
-
-      - name: Enable Pull Request Automerge
-        if: steps.cpr.outputs.pull-request-operation == 'created'
-        uses: peter-evans/enable-pull-request-automerge@a660677d5469627102a1c1e11409dd063606628d # v3.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          merge-method: rebase
 
       - name: Add a comment to trigger test workflow
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
