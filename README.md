@@ -1,206 +1,232 @@
-# RHEL for Edge
+# RHEL for Edge and Fedora IoT Tests
 
-This repository contains integration tests for two components:
+This repository contains downstream integration tests for OSTree-based edge
+images. It tests:
 
-- **RHEL for Edge** — RHEL, CentOS Stream, and Fedora Edge images built via `osbuild-composer`
-- **Fedora IoT** — Fedora IoT images from pre-built compose artifacts
+- RHEL for Edge, CentOS Stream, and Fedora images built with
+  [`osbuild-composer`](https://github.com/osbuild/osbuild-composer)
+- Fedora IoT images downloaded from pre-built compose artifacts
 
-Tests run on x86_64 and aarch64 architectures, triggered by GitHub Actions and executed via Testing Farm.
+Testing Farm provisions the test VMs. GitHub Actions starts the workflows and
+posts the test result to the pull request. The test plans and scripts support
+x86_64 and aarch64, although the enabled CI matrix varies by stream.
 
-## Table of contents
+## Contents
 
-- [Test scope](#test-scope)
-- [CI overview](#ci-overview)
-- [Running tests](#running-tests)
-  - [Test scenario](#test-scenario)
-  - [Test environment](#test-environment)
-  - [Test configuration](#test-configuration)
-  - [Test run](#test-run)
-- [Contact us](#contact-us)
+- [`setup.sh`](setup.sh) and [`iot-setup.sh`](iot-setup.sh): provision the
+  composer or IoT test environment inside a disposable VM
+- `*.sh`: image-specific integration tests
+- [`tmt/plans/`](tmt/plans): TMT plans and hardware requirements
+- [`tmt/tests/test.sh`](tmt/tests/test.sh): dispatches `TEST_CASE` to a test
+  script
+- [`files/`](files): osbuild-composer repository configuration
+- [`compose/`](compose): compose IDs already selected for testing
+- [`check-ostree.yaml`](check-ostree.yaml) and
+  [`check-ostree-iot.yaml`](check-ostree-iot.yaml): post-installation checks
+- [`.github/workflows/`](.github/workflows): compose triggers, test triggers,
+  linting, cleanup, and security scanning
 
-## Test scope
+The files in `compose/` are managed by the scheduled workflows. Do not edit
+them manually.
 
-The test flow covers the full lifecycle from image build to post-deployment validation. It includes four parts:
+## Test Matrix
 
-1. Image provisioning
+### Edge test cases
 
-    Edge tests - build images via [`osbuild-composer`](https://github.com/osbuild/osbuild-composer.git):
+| `TEST_CASE` | Script | Coverage |
+| --- | --- | --- |
+| `edge-commit` | [`ostree.sh`](ostree.sh) | OSTree commit deployed with kickstart |
+| `edge-installer` | [`ostree-ng.sh`](ostree-ng.sh) | Bootable installer ISO |
+| `edge-raw-image` | [`ostree-raw-image.sh`](ostree-raw-image.sh) | Raw disk image imported into a VM |
+| `edge-ami-image` | [`ostree-ami-image.sh`](ostree-ami-image.sh) | AWS AMI deployment |
+| `edge-simplified-installer` | [`ostree-simplified-installer.sh`](ostree-simplified-installer.sh) | Simplified installer ISO, including FDO where supported |
+| `edge-vsphere` | [`ostree-vsphere.sh`](ostree-vsphere.sh) | VMDK deployment to vSphere |
+| `edge-ignition` | [`ostree-ignition.sh`](ostree-ignition.sh) | Ignition with simplified installer and raw image |
+| `edge-8to9` | [`ostree-8-to-9.sh`](ostree-8-to-9.sh) | RHEL 8 or CentOS Stream 8 to version 9 |
+| `edge-9to9` | [`ostree-9-to-9.sh`](ostree-9-to-9.sh) | Upgrade within RHEL 9 |
 
-    - `edge-commit`: OSTree repository tarball
-    - `edge-container`: OCI container with OSTree repository
-    - `edge-installer`: Bootable ISO with embedded OSTree commit
-    - `edge-raw-image`: Raw disk image, converted to `qcow2`
-    - `edge-simplified-installer`: Bootable ISO with embedded OSTree commit
-    - `edge-ami`: Raw disk image for AWS
-    - `edge-vsphere`: VMDK image
+### Fedora IoT test cases
 
-    > Build RHEL, CentOS Stream, and Fedora x86_64 images on Testing Farm VMs.
-    > Build ARM images on bare metal ARM server or ARM VM at beaker.
+| `TEST_CASE` | Script | Coverage |
+| --- | --- | --- |
+| `iot-installer` | [`iot-installer.sh`](iot-installer.sh) | Installer ISO deployed with kickstart |
+| `iot-simplified-installer` | [`iot-simplified-installer.sh`](iot-simplified-installer.sh) | Simplified installer with FDO and Ignition |
+| `iot-raw-image` | [`iot-raw-image.sh`](iot-raw-image.sh) | Raw image imported into a VM |
+| `iot-bootc` | [`iot-bootc-image.sh`](iot-bootc-image.sh) | `bootc` OCI image converted with `bootc-image-builder` |
 
-    Fedora IoT tests - download pre-built compose artifacts from [Koji](https://kojipkgs.fedoraproject.org/compose/iot/):
+The dispatcher in [`tmt/tests/test.sh`](tmt/tests/test.sh) is the authoritative
+mapping between TMT test cases and scripts.
 
-    - Installer ISO
-    - Simplified installer ISO
-    - Raw disk image, converted to `qcow2`
-    - Bootc OCI image, converted to `qcow2`
+### Supported compose streams
 
-2. Image installation and deployment
-
-    - Edge: ISO boot, network boot (PXE), HTTP boot, VM disk image import, AWS EC2, vSphere
-    - IoT: ISO boot, VM disk image import
-
-3. System upgrade (Edge only)
-
-    - Upgrade with the same OSTree ref
-    - Rebase to a new OSTree ref
-    - Upgrade from RHEL 8 to RHEL 9
-
-4. Post-deployment validation
-
-    Edge checks ([`check-ostree.yaml`](check-ostree.yaml)):
-
-    - Check BIOS/UEFI and secure boot status
-    - Check `SELinux` status and enforcing mode
-    - Check root password status (locked)
-    - Check installed `ostree` commit and ref
-    - Check `ostree-remount` service status
-    - Check mount points (`/sysroot`, `/var`, `/usr`, `/boot`)
-    - Check LVM PV and LV, and check `growfs` (`raw-image` and `simplified-installer` only)
-    - Check [`greenboot`](https://github.com/fedora-iot/greenboot-rs.git) services
-    - Check auto rollback with [`greenboot`](https://github.com/fedora-iot/greenboot-rs.git) when failure is detected
-    - Run container with `podman` (root and non-root)
-    - Check embedded container images
-    - Check persistent journal log
-    - Check `dmesg` error and fail log
-    - Check `Ignition` configurations (`raw-image` and `simplified-installer` only)
-    - Check FDO onboarding, status, and re-encryption (`simplified-installer` only)
-    - Check firewall customizations
-    - Check installed packages (`wget`, `sos`)
-    - Check custom files, directories, and services
-    - Check `systemd` failed units
-
-    IoT checks ([`check-ostree-iot.yaml`](check-ostree-iot.yaml)):
-
-    - Check BIOS/UEFI status
-    - Check `SELinux` status and enforcing mode
-    - Check secure boot and TPM device
-    - Check partition layout and disk table
-    - Check `rpm-ostree` status
-    - Check `ostree` ref and deployment
-    - Check `ostree-remount` service status
-    - Check mount points (`/sysroot` `ro`, `/var` `rw`)
-    - Check FDO onboarding (`simplified-installer` only)
-    - Check [`greenboot`](https://github.com/fedora-iot/greenboot-rs.git) and rollback
-    - Check `boot-complete.target` status
-    - Check `grubenv` variables (`boot_success`)
-    - Run container with `podman` (root and non-root)
-    - Check `systemd` failed units
-
-## CI overview
-
-### Upstream CI
-
-For RHEL for Edge project, 90% of features come from [`osbuild`](https://github.com/osbuild/osbuild.git) and [`osbuild-composer`](https://github.com/osbuild/osbuild-composer.git). In this case, [`osbuild`](https://github.com/osbuild/osbuild.git) and [`osbuild-composer`](https://github.com/osbuild/osbuild-composer.git) CI will be used as RHEL for Edge project upstream CI.
-
-The upstream CI is triggered by each PR and it focuses on code change.
-
-Considering upstream CI environment and test duration, the upstream CI only covers virtualization tests, bare metal is out of upstream CI scope.
-
-### Repository CI
-
-Lint checks run automatically on every pull request and must pass before merging into `main`:
-
-1. [`commitlint`](https://www.conventionalcommits.org/en/v1.0.0/)
-2. [`codespell`](https://github.com/codespell-project/codespell)
-3. [`shellcheck`](https://www.shellcheck.net/)
-4. [`yamllint`](https://yamllint.readthedocs.io/en/stable/)
-
-Edge and IoT tests are triggered manually via `/test-*` PR comments and should pass before merging into `main` (see [CI doc](CI.md)).
-
-## Running tests
-
-### Test scenario
-
-Edge tests:
-
-| Script | Image type | Description |
-|--------|-----------|-------------|
-| [`ostree.sh`](ostree.sh) | `edge-commit` (tar) | OSTree commit deployed via kickstart |
-| [`ostree-ng.sh`](ostree-ng.sh) | `edge-installer` (ISO) | OSTree commit deployed via ISO installer |
-| [`ostree-raw-image.sh`](ostree-raw-image.sh) | `edge-raw-image` (raw) | Raw disk image deployed via VM import |
-| [`ostree-simplified-installer.sh`](ostree-simplified-installer.sh) | `edge-simplified-installer` (ISO) | OSTree commit deployed via simplified ISO installer |
-| [`ostree-ignition.sh`](ostree-ignition.sh) | `edge-simplified-installer` + `edge-raw-image` | Ignition provisioning on simplified installer ISO and raw disk image |
-| [`ostree-vsphere.sh`](ostree-vsphere.sh) | `edge-vsphere` (VMDK) | VMDK image deployed to vSphere |
-| [`ostree-ami-image.sh`](ostree-ami-image.sh) | `edge-ami` (raw) | AMI deployed to AWS EC2 |
-| [`ostree-8-to-9.sh`](ostree-8-to-9.sh) | `edge-container` (OCI) | Upgrade from RHEL 8 / CS8 to RHEL 9 / CS9 |
-| [`ostree-9-to-9.sh`](ostree-9-to-9.sh) | `edge-container` (OCI) | Upgrade within RHEL 9 |
-
-Fedora IoT tests:
-
-| Script | Image type | Description |
-|--------|-----------|-------------|
-| [`iot-installer.sh`](iot-installer.sh) | IoT installer ISO | Fedora IoT installer ISO deployed via kickstart |
-| [`iot-raw-image.sh`](iot-raw-image.sh) | IoT raw disk image | Fedora IoT raw disk image deployed via VM import |
-| [`iot-simplified-installer.sh`](iot-simplified-installer.sh) | IoT simplified installer ISO | Fedora IoT simplified installer ISO with FDO and Ignition |
-| [`iot-bootc-image.sh`](iot-bootc-image.sh) | IoT `bootc` OCI image | Fedora IoT `bootc` image built via `bootc-image-builder` |
-
-### Test environment
-
-#### For x86_64
-
-Tests can run on any x86_64 machine (server, laptop, or VM), but KVM must be enabled. Without KVM, QEMU will be used and tests will take a really long time.
-
-Verify that KVM is available:
-
-    $ ls -l /dev/kvm
-
-#### For aarch64
-
-To run tests on ARM, a bare metal ARM server is required.
-
-#### Supported OS
+The scheduled compose workflows currently track:
 
 - RHEL 8.10
-- RHEL 9.4/9.5/9.6
+- RHEL 9.2, 9.4, 9.5, 9.6, and 9.8
 - CentOS Stream 9
-- Fedora IoT 44
-- Fedora IoT 45
-- Fedora IoT 46
+- Fedora 43
+- Fedora IoT 44, 45, and 46
 
-### Test configuration
+The exact architecture coverage is defined by each stream's workflow. RHEL 9
+and CentOS Stream 9 workflows include x86_64 and, where enabled, aarch64
+Testing Farm jobs. Fedora IoT aarch64 jobs are currently disabled in the
+workflows.
 
-Environment variables used by test scripts and CI workflows. Most test scripts require no environment variables.
+## CI Workflows
 
-| Environment variable | Used by | Purpose |
-|-------------|---------|---------|
-| `DOWNLOAD_NODE` | `ostree.sh`, `ostree-8-to-9.sh`, `ostree-9-to-9.sh`, `setup.sh`, `tools/arm-*.sh` | RHEL nightly compose download URL |
-| `QUAY_USERNAME` | `ostree-ng.sh`, `tools/arm-installer.sh` | quay.io username for pushing OCI images |
-| `QUAY_PASSWORD` | `ostree-ng.sh`, `tools/arm-installer.sh` | quay.io password for pushing OCI images |
-| `DOCKERHUB_USERNAME` | `tools/arm-raw.sh`, `tools/edge-raw.sh`, CI workflows | Docker Hub username for pushing OCI images |
-| `DOCKERHUB_PASSWORD` | `tools/arm-raw.sh`, `tools/edge-raw.sh`, CI workflows | Docker Hub password for pushing OCI images |
-| `AWS_ACCESS_KEY_ID` | AMI tests (via `aws` CLI) | AWS credentials for AMI upload and EC2 |
-| `AWS_SECRET_ACCESS_KEY` | AMI tests (via `aws` CLI) | AWS credentials for AMI upload and EC2 |
-| `AWS_DEFAULT_REGION` | AMI tests (via `aws` CLI) | AWS region (default: `us-east-1`) |
-| `GOVC_URL` | vSphere CI workflows | vSphere server URL |
-| `GOVC_USERNAME` | vSphere CI workflows | vSphere username |
-| `GOVC_PASSWORD` | vSphere CI workflows | vSphere password |
+### Compose tracking
 
-### Test run
+Scheduled `trigger-*.yml` workflows fetch the latest compose ID for each
+stream. If it has not already been tested, the workflow appends it to the
+corresponding `compose/compose.*` file and opens a pull request. The pull
+request also receives the command that starts the stream-specific Testing Farm
+workflow.
 
-#### For x86_64
+Generated compose pull requests are eligible for the compose policy only when
+they:
 
-    $ DOWNLOAD_NODE="hello-world.com" ./ostree.sh
-    $ QUAY_USERNAME=rhel-edge QUAY_PASSWORD=123456 ./ostree-ng.sh
-    $ ./iot-installer.sh
+- Come from `cloudkitebot` and have the existing `automated-pr` or `auto-merge`
+  label
+- Change exactly one `compose/compose.*` file
+- Append exactly one compose ID without changing existing lines
+- Match the current compose ID from the external compose source
+- Have passing lint and stream-specific Testing Farm checks
+- Are not drafts, held by a review label, or superseded by a newer compose
 
-#### For aarch64
-> **Note:** The aarch64 commands listed below have not been recently tested and may not work as expected. There is currently no capacity to verify them.
+The policy is implemented by
+[`.github/workflows/compose-update-policy.yml`](.github/workflows/compose-update-policy.yml)
+and [`.github/scripts/compose-update-policy.py`](.github/scripts/compose-update-policy.py).
+When every condition passes, it approves the pull request and enables rebase
+auto-merge. Other automated changes, test failures, infrastructure failures,
+and changes outside the compose tracking files remain manual-review work.
 
-    $ DOWNLOAD_NODE="hello-world.com" QUAY_USERNAME=rhel-edge QUAY_PASSWORD=123456 ./tools/arm-installer.sh <test os>
-    $ DOWNLOAD_NODE="hello-world.com" DOCKERHUB_USERNAME=rhel-edge DOCKERHUB_PASSWORD=123456 ./tools/arm-raw.sh <test os>
+Compose retention cleanup is handled separately by
+[`clear-compose-file.yml`](.github/workflows/clear-compose-file.yml).
 
-    <test os> can be, for example, "rhel-9-6" or "centos-stream-9"
+### Test triggers
 
-## Contact us
+Test workflows respond to authorized pull-request comments. The available
+commands are:
 
-Please open a [GitHub issue](https://github.com/virt-s1/rhel-edge/issues) or start a [GitHub discussion](https://github.com/virt-s1/rhel-edge/discussions).
+| Comment | Tests |
+| --- | --- |
+| `/test-rhel-8-10` | RHEL 8.10 Edge |
+| `/test-rhel-9-2` | RHEL 9.2 Edge |
+| `/test-rhel-9-4` | RHEL 9.4 Edge |
+| `/test-rhel-9-5` | RHEL 9.5 Edge |
+| `/test-rhel-9-6` | RHEL 9.6 Edge |
+| `/test-rhel-9-8` | RHEL 9.8 Edge |
+| `/test-cs9` | CentOS Stream 9 Edge |
+| `/test-f43` | Fedora 43 Edge |
+| `/test-f44-iot` | Fedora IoT 44 |
+| `/test-f45-iot` | Fedora IoT 45 |
+| `/test-f46-iot` | Fedora IoT 46 |
+| `/test-rawhide` | Fedora Rawhide Edge, when the workflow is enabled |
+
+The comment sender must have the repository permission required by the
+workflow. See [`CI.md`](CI.md) for workflow details and the Testing Farm
+integration.
+
+### Repository checks
+
+The [`Lint`](.github/workflows/lint.yml) workflow runs on every pull request:
+
+- Commit message validation with `commitlint`
+- Spelling validation with `codespell`
+- Shell validation with `shellcheck`
+- YAML validation with `yamllint`
+
+The [`CodeQL`](.github/workflows/codeql.yml) workflow provides code scanning.
+Cleanup workflows remove stale AWS AMI and vSphere resources.
+
+## Running Tests Locally
+
+These are integration tests intended for disposable VMs. There is no local
+build step for the repository itself. The scripts provision their environment,
+build or download an image, deploy it, run validation, and clean up.
+
+### Requirements
+
+For x86_64, use a machine or VM with KVM available:
+
+```shell
+ls -l /dev/kvm
+```
+
+aarch64 tests require an ARM host with the required cloud or virtualization
+access. Testing Farm is the supported execution environment for CI.
+
+### Examples
+
+RHEL Edge tests require `DOWNLOAD_NODE` to identify the RHEL compose server:
+
+```shell
+DOWNLOAD_NODE=download.example.com ./ostree.sh
+```
+
+Tests that push images also require the relevant registry credentials:
+
+```shell
+DOWNLOAD_NODE=download.example.com \
+QUAY_USERNAME=example \
+QUAY_PASSWORD='token' \
+./ostree-ng.sh
+```
+
+Fedora IoT tests download their compose artifacts directly and do not normally
+need a compose-server variable:
+
+```shell
+./iot-installer.sh
+```
+
+Do not put credentials in scripts, compose files, pull requests, or commits.
+CI receives secrets through GitHub Actions and Testing Farm configuration.
+
+### Configuration variables
+
+| Variable | Purpose |
+| --- | --- |
+| `DOWNLOAD_NODE` | RHEL compose download server |
+| `QUAY_USERNAME` | Quay username for OCI image tests |
+| `QUAY_PASSWORD` | Quay password or token for OCI image tests |
+| `DOCKERHUB_USERNAME` | Docker Hub username for image tests |
+| `DOCKERHUB_PASSWORD` | Docker Hub password or token for image tests |
+| `AWS_ACCESS_KEY_ID` | AWS credentials for AMI and EC2 tests |
+| `AWS_SECRET_ACCESS_KEY` | AWS credentials for AMI and EC2 tests |
+| `AWS_DEFAULT_REGION` | AWS region for AMI and EC2 tests |
+| `GOVC_URL`, `GOVC_USERNAME`, `GOVC_PASSWORD` | vSphere tests |
+
+The workflows may pass additional credentials to Testing Farm for specific
+scenarios. See the individual workflow and test script before running a cloud
+or registry-backed test.
+
+## Post-installation Checks
+
+The Ansible playbooks validate the deployed systems, including:
+
+- BIOS/UEFI, secure boot, TPM, partitions, LVM, and mount points
+- SELinux, `systemd`, `ostree`, and `rpm-ostree` state
+- OSTree deployments, refs, upgrades, rebases, and rollback behavior
+- `greenboot`, boot completion, and persistent journal state
+- Podman root and non-root containers
+- Ignition and FDO provisioning where supported
+- Installed packages, custom files and services, and kernel error logs
+
+Edge checks are in [`check-ostree.yaml`](check-ostree.yaml). Fedora IoT checks
+are in [`check-ostree-iot.yaml`](check-ostree-iot.yaml).
+
+## Contributing
+
+Create a branch from `main`, make the smallest focused change, and run the
+repository lint commands described in [`CI.md`](CI.md). Use Conventional
+Commits and sign commits off for DCO compliance. Open a pull request against
+`main`; use an authorized `/test-*` comment when integration testing is needed.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for repository conventions and
+[`AGENTS.md`](AGENTS.md) for the repository structure and workflow rules.
+
+## Contact
+
+Open a [GitHub issue](https://github.com/virt-s1/rhel-edge/issues) or start a
+[GitHub discussion](https://github.com/virt-s1/rhel-edge/discussions).
